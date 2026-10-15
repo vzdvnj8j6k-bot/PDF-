@@ -5,18 +5,36 @@ import { Document, PageAnnotations, ShareLink, Stroke, TextAnnotation } from '@/
 // ==================== Auth ====================
 
 export async function ensureAnonymousAuth() {
-  const sb = getSupabaseClient()
-  const { data: { session } } = await sb.auth.getSession()
-  if (!session) {
-    const { error } = await sb.auth.signInAnonymously()
-    if (error) throw error
-  }
+  // no-op: auth is now handled via Google OAuth
 }
 
 export async function getCurrentUserId(): Promise<string | null> {
   const sb = getSupabaseClient()
   const { data: { user } } = await sb.auth.getUser()
   return user?.id ?? null
+}
+
+export async function getSession() {
+  const sb = getSupabaseClient()
+  const { data: { session } } = await sb.auth.getSession()
+  return session
+}
+
+export async function signInWithGoogle() {
+  const sb = getSupabaseClient()
+  const { error } = await sb.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: `${window.location.origin}/auth/callback`,
+    },
+  })
+  if (error) throw error
+}
+
+export async function signOut() {
+  const sb = getSupabaseClient()
+  const { error } = await sb.auth.signOut()
+  if (error) throw error
 }
 
 // ==================== Documents ====================
