@@ -7,9 +7,11 @@ interface ToolbarProps {
   tool: Tool
   color: string
   size: number
+  fontSize: number
   onToolChange: (tool: Tool) => void
   onColorChange: (color: string) => void
   onSizeChange: (size: number) => void
+  onFontSizeChange: (size: number) => void
   onUndo: () => void
   onClearPage: () => void
   canUndo: boolean
@@ -39,9 +41,11 @@ const TOOLS: { id: Tool; label: string; icon: string }[] = [
   { id: 'eraser', label: '消しゴム', icon: '◻' },
 ]
 
+const FONT_SIZES = [12, 16, 24, 36]
+
 export default function Toolbar({
-  tool, color, size,
-  onToolChange, onColorChange, onSizeChange,
+  tool, color, size, fontSize,
+  onToolChange, onColorChange, onSizeChange, onFontSizeChange,
   onUndo, onClearPage, canUndo,
 }: ToolbarProps) {
   const [hoveredTool, setHoveredTool] = useState<string | null>(null)
@@ -86,6 +90,27 @@ export default function Toolbar({
       </div>
 
       <div className="w-8 h-px bg-gray-200" />
+
+      {/* Font size (text tool only) */}
+      {tool === 'text' && (
+        <>
+          <div className="flex flex-col gap-1 w-full items-center">
+            <span className="text-xs text-gray-400">文字</span>
+            {FONT_SIZES.map(s => (
+              <button
+                key={s}
+                title={`${s}px`}
+                onClick={() => onFontSizeChange(s)}
+                className={`w-9 h-7 rounded text-xs font-bold transition-all
+                  ${fontSize === s ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+          <div className="w-8 h-px bg-gray-200" />
+        </>
+      )}
 
       {/* Colors */}
       <div className="flex flex-col gap-1 w-full items-center">

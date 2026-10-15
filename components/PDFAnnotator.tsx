@@ -29,8 +29,10 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
   const [annotations, setAnnotations] = useState<Map<number, PageAnnotations>>(
     initialAnnotations ?? new Map()
   )
+  const [fontSize, setFontSize] = useState(16)
   const [textInput, setTextInput] = useState<{ x: number; y: number } | null>(null)
   const [textValue, setTextValue] = useState('')
+  const [editingTextId, setEditingTextId] = useState<string | null>(null)
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [isLoading, setIsLoading] = useState(true)
 
@@ -184,8 +186,26 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
     const point = getPoint(e)
 
     if (tool === 'text') {
-      setTextInput(point)
-      setTextValue('')
+      const pageAnnotations = annotations.get(currentPage) ?? { strokes: [], texts: [] }
+      const hit = pageAnnotations.texts.find(t =>
+        Math.abs(t.x - point.x) < 200 && Math.abs(t.y - point.y) < t.fontSize * 1.5
+      )
+      if (hit) {
+        setEditingTextId(hit.id)
+        setTextInput({ x: hit.x, y: hit.y })
+        setTextValue(hit.text)
+        setFontSize(hit.fontSize)
+        setAnnotations(prev => {
+          const next = new Map(prev)
+          const page = prev.get(currentPage) ?? { strokes: [], texts: [] }
+          next.set(currentPage, { ...page, texts: page.texts.filter(t => t.id !== hit.id) })
+          return next
+        })
+      } else {
+        setEditingTextId(null)
+        setTextInput(point)
+        setTextValue('')
+      }
       setTimeout(() => textInputRef.current?.focus(), 50)
       return
     }
@@ -207,11 +227,24 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
     const point = getPoint(e)
     currentStroke.current.points.push(point)
 
-    // Live drawing
     const ctx = annotCanvasRef.current.getContext('2d')!
     const pageAnnotations = annotations.get(currentPage) ?? { strokes: [], texts: [] }
     redrawAnnotations(annotCanvasRef.current, pageAnnotations)
-    drawStroke(ctx, currentStroke.current)
+
+    if (tool === 'eraser') {
+      // Show eraser cursor circle instead of pixel erasure
+      const r = currentStroke.current.size
+      ctx.save()
+      ctx.strokeStyle = 'rgba(150,150,150,0.6)'
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([4, 3])
+      ctx.beginPath()
+      ctx.arc(point.x, point.y, r, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.restore()
+    } else {
+      drawStroke(ctx, currentStroke.current)
+    }
   }
 
   function handlePointerUp() {
@@ -227,47 +260,80 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
       stroke.points = [stroke.points[0], stroke.points[stroke.points.length - 1]]
     }
 
+    if (tool === 'eraser') {
+      // Semantic erase: remove strokes whose points fall within eraser radius
+      const r = stroke.size
+      setAnnotations(prev => {
+        const page = prev.get(currentPage) ?? { strokes: [], texts: [] }
+        const remaining = page.strokes.filter(s =>
+          !s.points.some(sp =>
+            stroke.points.some(ep => Math.hypot(sp.x - ep.x, sp.y - ep.y) < r)
+          )
+        )
+        if (remaining.length === page.strokes.length) return prev
+        const hist = history.current.get(currentPage) ?? []
+        history.current.set(currentPage, [...hist, page])
+        const updated = { ...page, strokes: remaining }
+        const next = new Map(prev)
+        next.set(currentPage, updated)
+        scheduleSave(currentPage, updated)
+        return next
+      })
+      return
+    }
+
     setAnnotations(prev => {
       const next = new Map(prev)
       const page = next.get(currentPage) ?? { strokes: [], texts: [] }
-
-      // Save to history
       const hist = history.current.get(currentPage) ?? []
       history.current.set(currentPage, [...hist, page])
-
-      const updated: PageAnnotations = {
-        ...page,
-        strokes: [...page.strokes, stroke],
-      }
+      const updated: PageAnnotations = { ...page, strokes: [...page.strokes, stroke] }
       next.set(currentPage, updated)
-
       scheduleSave(currentPage, updated)
       return next
     })
   }
 
   function handleTextSubmit() {
-    if (!textInput || !textValue.trim()) {
+    if (!textInput) return
+    if (!textValue.trim()) {
+      // If cancelling an edit, restore the original text
+      if (editingTextId) {
+        const orig = annotations.get(currentPage)?.texts.find(t => t.id === editingTextId)
+        if (!orig) {
+          setTextInput(null)
+          setEditingTextId(null)
+          return
+        }
+      }
       setTextInput(null)
+      setEditingTextId(null)
       return
-    }
-
-    const textAnnotation: TextAnnotation = {
-      id: uuidv4(),
-      x: textInput.x,
-      y: textInput.y,
-      text: textValue,
-      fontSize: brushSize * 5 + 10,
-      color,
     }
 
     setAnnotations(prev => {
       const next = new Map(prev)
       const page = prev.get(currentPage) ?? { strokes: [], texts: [] }
-      const updated: PageAnnotations = {
-        ...page,
-        texts: [...page.texts, textAnnotation],
+      const hist = history.current.get(currentPage) ?? []
+      history.current.set(currentPage, [...hist, page])
+
+      let updatedTexts: TextAnnotation[]
+      if (editingTextId) {
+        // Update existing text
+        updatedTexts = page.texts.map(t =>
+          t.id === editingTextId
+            ? { ...t, text: textValue, fontSize, color }
+            : t
+        )
+        // If not found (was removed in handlePointerDown), add it back
+        if (!updatedTexts.some(t => t.id === editingTextId)) {
+          updatedTexts = [...page.texts, { id: editingTextId, x: textInput.x, y: textInput.y, text: textValue, fontSize, color }]
+        }
+      } else {
+        updatedTexts = [...page.texts, { id: uuidv4(), x: textInput.x, y: textInput.y, text: textValue, fontSize, color }]
       }
+
+      const updated: PageAnnotations = { ...page, texts: updatedTexts }
       next.set(currentPage, updated)
       scheduleSave(currentPage, updated)
       return next
@@ -275,6 +341,7 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
 
     setTextInput(null)
     setTextValue('')
+    setEditingTextId(null)
   }
 
   function scheduleSave(pageNum: number, data: PageAnnotations) {
@@ -455,9 +522,11 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
           tool={tool}
           color={color}
           size={brushSize}
+          fontSize={fontSize}
           onToolChange={setTool}
           onColorChange={setColor}
           onSizeChange={setBrushSize}
+          onFontSizeChange={setFontSize}
           onUndo={handleUndo}
           onClearPage={handleClearPage}
           canUndo={(history.current.get(currentPage)?.length ?? 0) > 0}
@@ -553,7 +622,7 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
                     left: textInput.x * (annotCanvasRef.current ? annotCanvasRef.current.getBoundingClientRect().width / annotCanvasRef.current.width : 1),
                     top: textInput.y * (annotCanvasRef.current ? annotCanvasRef.current.getBoundingClientRect().height / annotCanvasRef.current.height : 1),
                     color,
-                    fontSize: brushSize * 5 + 10,
+                    fontSize,
                     minWidth: 100,
                   }}
                   placeholder="テキストを入力..."

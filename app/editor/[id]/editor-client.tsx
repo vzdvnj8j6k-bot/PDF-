@@ -46,7 +46,7 @@ export default function EditorPage() {
       setShareUrl(url)
       setShowShareDialog(true)
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
+      const msg = e instanceof Error ? e.message : (e as {message?: string})?.message ?? JSON.stringify(e)
       console.error('Share error:', e)
       setShareError(msg)
       setShowShareDialog(true)
