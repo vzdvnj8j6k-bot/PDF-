@@ -211,6 +211,23 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
     drawStroke(ctx, currentStroke.current)
   }
 
+  function straightenIfLine(points: Point[]): Point[] {
+    if (points.length < 3) return points
+    const start = points[0]
+    const end = points[points.length - 1]
+    const len = Math.hypot(end.x - start.x, end.y - start.y)
+    if (len < 20) return points
+    const maxDev = Math.min(15, len * 0.08)
+    for (let i = 1; i < points.length - 1; i++) {
+      const p = points[i]
+      const dist = Math.abs(
+        (end.y - start.y) * p.x - (end.x - start.x) * p.y + end.x * start.y - end.y * start.x
+      ) / len
+      if (dist > maxDev) return points
+    }
+    return [start, end]
+  }
+
   function handlePointerUp() {
     if (!isDrawing.current || !currentStroke.current) return
     isDrawing.current = false
@@ -219,6 +236,8 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
     currentStroke.current = null
 
     if (stroke.points.length < 2) return
+
+    stroke.points = straightenIfLine(stroke.points)
 
     setAnnotations(prev => {
       const next = new Map(prev)
