@@ -19,11 +19,13 @@ interface Props {
   initialPage?: number
   onPageChange?: (page: number) => void
   onShare?: () => void
+  /** Custom save function; defaults to saveAnnotations from db.ts */
+  saveFn?: (documentId: string, pageNumber: number, annotations: PageAnnotations) => Promise<void>
 }
 
 const SAVE_DEBOUNCE_MS = 1500
 
-export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, initialAnnotations, initialPage = 1, onPageChange, onShare }: Props) {
+export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, initialAnnotations, initialPage = 1, onPageChange, onShare, saveFn }: Props) {
   const [pdf, setPdf] = useState<import('pdfjs-dist').PDFDocumentProxy | null>(null)
   const [currentPage, _setCurrentPage] = useState(initialPage)
   function setCurrentPage(p: number | ((prev: number) => number)) {
@@ -491,9 +493,10 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
     if (readonly) return
     if (saveTimer.current) clearTimeout(saveTimer.current)
     setStatus('saving')
+    const effectiveSave = saveFn ?? saveAnnotations
     saveTimer.current = setTimeout(async () => {
       try {
-        await saveAnnotations(documentId, pageNum, data)
+        await effectiveSave(documentId, pageNum, data)
         setStatus('saved')
         setTimeout(() => setStatus('idle'), 2000)
         // Broadcast change to collaborators

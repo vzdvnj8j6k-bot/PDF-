@@ -50,3 +50,10 @@ export interface ShareLink {
   token: string
   created_at: string
 }
+
+export interface CollabLink {
+  id: string
+  document_id: string
+  token: string
+  created_at: string
+}

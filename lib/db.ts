@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid'
 import { getSupabaseClient } from './supabase'
-import { Document, PageAnnotations, ShareLink, Stroke, TextAnnotation } from '@/types'
+import { CollabLink, Document, EraserMark, PageAnnotations, ShareLink, Stroke, TextAnnotation } from '@/types'
 
 // ==================== Auth ====================
 
@@ -159,7 +159,11 @@ export async function saveAnnotations(
       {
         document_id: documentId,
         page_number: pageNumber,
-        strokes: { strokes: annotations.strokes, texts: annotations.texts },
+        strokes: {
+          strokes: annotations.strokes,
+          texts: annotations.texts,
+          eraserMarks: annotations.eraserMarks ?? [],
+        },
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'document_id,page_number' }
@@ -177,8 +181,12 @@ export async function getAllAnnotations(documentId: string): Promise<Map<number,
   if (error || !data) return new Map()
   const map = new Map<number, PageAnnotations>()
   for (const row of data) {
-    const stored = row.strokes as { strokes?: Stroke[], texts?: TextAnnotation[] }
-    map.set(row.page_number, { strokes: stored.strokes ?? [], texts: stored.texts ?? [] })
+    const stored = row.strokes as { strokes?: Stroke[], texts?: TextAnnotation[], eraserMarks?: EraserMark[] }
+    map.set(row.page_number, {
+      strokes: stored.strokes ?? [],
+      texts: stored.texts ?? [],
+      eraserMarks: stored.eraserMarks,
+    })
   }
   return map
 }
@@ -206,6 +214,67 @@ export async function createShareLink(documentId: string): Promise<ShareLink> {
 
   if (error) throw error
   return data as ShareLink
+}
+
+// ==================== Collab Links ====================
+
+export async function createCollabLink(documentId: string): Promise<CollabLink> {
+  const sb = getSupabaseClient()
+
+  const { data: existing } = await sb
+    .from('collab_links')
+    .select('*')
+    .eq('document_id', documentId)
+    .single()
+
+  if (existing) return existing as CollabLink
+
+  const token = uuidv4()
+  const { data, error } = await sb
+    .from('collab_links')
+    .insert({ document_id: documentId, token })
+    .select()
+    .single()
+
+  if (error) throw error
+  return data as CollabLink
+}
+
+export async function deleteCollabLink(documentId: string): Promise<void> {
+  const sb = getSupabaseClient()
+  await sb.from('collab_links').delete().eq('document_id', documentId)
+}
+
+export async function getCollabLink(documentId: string): Promise<CollabLink | null> {
+  const sb = getSupabaseClient()
+  const { data } = await sb
+    .from('collab_links')
+    .select('*')
+    .eq('document_id', documentId)
+    .single()
+  return data as CollabLink | null
+}
+
+export async function getDocumentByCollabToken(token: string): Promise<{ document: Document; annotations: Map<number, PageAnnotations> } | null> {
+  const sb = getSupabaseClient()
+  const { data: link } = await sb
+    .from('collab_links')
+    .select('document_id')
+    .eq('token', token)
+    .single()
+
+  if (!link) return null
+
+  const { data: doc } = await sb
+    .from('documents')
+    .select('*')
+    .eq('id', link.document_id)
+    .single()
+
+  if (!doc) return null
+
+  const annotations = await getAllAnnotations(doc.id)
+  return { document: doc as Document, annotations }
 }
 
 export async function getDocumentByToken(token: string): Promise<{ document: Document; annotations: Map<number, PageAnnotations> } | null> {
