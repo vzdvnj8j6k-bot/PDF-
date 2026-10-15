@@ -462,7 +462,8 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
         </div>
 
         {/* PDF Canvas area */}
-        <div className="flex-1 overflow-auto flex justify-center p-6">
+        <div className="flex-1 overflow-auto">
+          <div className="flex justify-center min-w-max py-6 px-8">
           {isLoading ? (
             <div className="flex items-center justify-center h-64">
               <div className="text-gray-400">PDFを読み込み中...</div>
@@ -505,6 +506,7 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
               )}
             </div>
           )}
+          </div>
         </div>
 
         {/* Thumbnail page list */}
