@@ -52,6 +52,7 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
 
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null)
   const annotCanvasRef = useRef<HTMLCanvasElement>(null)
+  const dprRef = useRef(1)
   const textInputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const isDrawing = useRef(false)
@@ -131,16 +132,24 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
 
     try {
       const page = await pdf.getPage(pageNum)
-      const viewport = page.getViewport({ scale })
+      const dpr = window.devicePixelRatio || 1
+      dprRef.current = dpr
+      // Render at physical resolution for crispness on HiDPI displays
+      const viewport = page.getViewport({ scale: scale * dpr })
+      const cssW = Math.round(viewport.width / dpr)
+      const cssH = Math.round(viewport.height / dpr)
 
       const pdfCanvas = pdfCanvasRef.current
-      const ctx = pdfCanvas.getContext('2d')!
       pdfCanvas.width = viewport.width
       pdfCanvas.height = viewport.height
+      pdfCanvas.style.width = cssW + 'px'
+      pdfCanvas.style.height = cssH + 'px'
 
       const annotCanvas = annotCanvasRef.current
       annotCanvas.width = viewport.width
       annotCanvas.height = viewport.height
+      annotCanvas.style.width = cssW + 'px'
+      annotCanvas.style.height = cssH + 'px'
 
       // Cancel previous render
       if (renderTaskRef.current) {
@@ -152,9 +161,9 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
       await renderTaskRef.current.promise
       renderTaskRef.current = null
 
-      // Draw annotations
+      // Draw annotations at physical scale (scale * dpr)
       const pageAnnotations = annotations.get(pageNum) ?? { strokes: [], texts: [] }
-      redrawAnnotations(annotCanvas, pageAnnotations)
+      redrawAnnotations(annotCanvas, pageAnnotations, scale * dpr, dpr)
     } catch (e: unknown) {
       if (e instanceof Error && e.name !== 'RenderingCancelledException') {
         console.error('Render error:', e)
@@ -166,14 +175,15 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
     renderPage(currentPage)
   }, [currentPage, renderPage])
 
-  // Redraw all annotations for a page at the given drawScale
-  function redrawAnnotations(canvas: HTMLCanvasElement, pageAnnotations: PageAnnotations, drawScale = scale) {
+  // Redraw all annotations. drawScale = scale * dpr for screen, 2 for print.
+  // lineWidthScale = dpr for screen (so lines are visually consistent), 1 for print.
+  function redrawAnnotations(canvas: HTMLCanvasElement, pageAnnotations: PageAnnotations, drawScale = scale, lineWidthScale = 1) {
     const ctx = canvas.getContext('2d')!
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
     for (const stroke of pageAnnotations.strokes) {
       if (stroke.points.length < 2) continue
-      drawStroke(ctx, stroke, drawScale)
+      drawStroke(ctx, stroke, drawScale, studyMode, lineWidthScale)
     }
 
     for (const text of pageAnnotations.texts) {
@@ -209,7 +219,7 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
     }
   }
 
-  function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, drawScale = scale, forceStudyMode = studyMode) {
+  function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, drawScale = scale, forceStudyMode = studyMode, lineWidthScale = 1) {
     if (stroke.points.length < 2) return
     ctx.save()
 
@@ -218,7 +228,7 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
 
     ctx.globalAlpha = maskMode ? 1 : stroke.opacity
     ctx.strokeStyle = maskMode ? stroke.color.slice(0, 7) : stroke.color
-    ctx.lineWidth = stroke.size
+    ctx.lineWidth = stroke.size * lineWidthScale
     ctx.lineCap = isHighlighter ? 'square' : 'round'
     ctx.lineJoin = isHighlighter ? 'miter' : 'round'
 
@@ -245,11 +255,10 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
   // Get canvas-relative coordinates normalized to scale=1 (PDF page units)
   function getPoint(e: React.PointerEvent<HTMLCanvasElement>): Point {
     const rect = annotCanvasRef.current!.getBoundingClientRect()
-    const scaleX = annotCanvasRef.current!.width / rect.width
-    const scaleY = annotCanvasRef.current!.height / rect.height
+    // rect is in CSS pixels; divide by CSS scale to get PDF page units
     return {
-      x: (e.clientX - rect.left) * scaleX / scale,
-      y: (e.clientY - rect.top) * scaleY / scale,
+      x: (e.clientX - rect.left) / scale,
+      y: (e.clientY - rect.top) / scale,
     }
   }
 
@@ -305,20 +314,23 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
   function handlePointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
     if (!annotCanvasRef.current) return
 
+    const dpr = dprRef.current
+    const physScale = scale * dpr  // CSS scale → physical canvas pixels
+
     // Show eraser cursor on hover even without pressing
     if (!isDrawing.current) {
       if (tool === 'eraser') {
         const point = getPoint(e)
         const pageAnnotations = annotations.get(currentPage) ?? { strokes: [], texts: [] }
-        redrawAnnotations(annotCanvasRef.current, pageAnnotations)
+        redrawAnnotations(annotCanvasRef.current, pageAnnotations, physScale, dpr)
         const ctx = annotCanvasRef.current.getContext('2d')!
-        const eraserSize = brushSize * 4
+        const eraserSize = brushSize * 4 * dpr
         ctx.save()
         ctx.strokeStyle = 'rgba(150,150,150,0.6)'
-        ctx.lineWidth = 1.5
-        ctx.setLineDash([4, 3])
+        ctx.lineWidth = 1.5 * dpr
+        ctx.setLineDash([4 * dpr, 3 * dpr])
         ctx.beginPath()
-        ctx.arc(point.x * scale, point.y * scale, eraserSize, 0, Math.PI * 2)
+        ctx.arc(point.x * physScale, point.y * physScale, eraserSize, 0, Math.PI * 2)
         ctx.stroke()
         ctx.restore()
       }
@@ -335,7 +347,7 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
 
     if (tool === 'eraser') {
       // Redraw base annotations (including saved eraser marks)
-      redrawAnnotations(annotCanvasRef.current, pageAnnotations)
+      redrawAnnotations(annotCanvasRef.current, pageAnnotations, physScale, dpr)
 
       // Apply current gesture path as pixel-level erasure
       const pts = currentStroke.current.points
@@ -344,15 +356,15 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
         ctx.globalCompositeOperation = 'destination-out'
         ctx.lineCap = 'round'
         ctx.lineJoin = 'round'
-        ctx.lineWidth = currentStroke.current.size * 2
+        ctx.lineWidth = currentStroke.current.size * 2 * dpr
         ctx.beginPath()
         if (pts.length === 1) {
-          ctx.arc(pts[0].x * scale, pts[0].y * scale, currentStroke.current.size, 0, Math.PI * 2)
+          ctx.arc(pts[0].x * physScale, pts[0].y * physScale, currentStroke.current.size * dpr, 0, Math.PI * 2)
           ctx.fill()
         } else {
-          ctx.moveTo(pts[0].x * scale, pts[0].y * scale)
+          ctx.moveTo(pts[0].x * physScale, pts[0].y * physScale)
           for (let i = 1; i < pts.length; i++) {
-            ctx.lineTo(pts[i].x * scale, pts[i].y * scale)
+            ctx.lineTo(pts[i].x * physScale, pts[i].y * physScale)
           }
           ctx.stroke()
         }
@@ -362,15 +374,15 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
       // Draw eraser cursor
       ctx.save()
       ctx.strokeStyle = 'rgba(150,150,150,0.6)'
-      ctx.lineWidth = 1.5
-      ctx.setLineDash([4, 3])
+      ctx.lineWidth = 1.5 * dpr
+      ctx.setLineDash([4 * dpr, 3 * dpr])
       ctx.beginPath()
-      ctx.arc(point.x * scale, point.y * scale, currentStroke.current.size, 0, Math.PI * 2)
+      ctx.arc(point.x * physScale, point.y * physScale, currentStroke.current.size * dpr, 0, Math.PI * 2)
       ctx.stroke()
       ctx.restore()
     } else {
-      redrawAnnotations(annotCanvasRef.current, pageAnnotations)
-      drawStroke(ctx, currentStroke.current)
+      redrawAnnotations(annotCanvasRef.current, pageAnnotations, physScale, dpr)
+      drawStroke(ctx, currentStroke.current, physScale, studyMode, dpr)
     }
   }
 
@@ -398,10 +410,10 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
         })
         scheduleSave(currentPage, updated)
         // Immediately redraw with new mark to clear cursor circle
-        if (annotCanvasRef.current) redrawAnnotations(annotCanvasRef.current, updated)
+        if (annotCanvasRef.current) redrawAnnotations(annotCanvasRef.current, updated, scale * dprRef.current, dprRef.current)
       } else {
         // No mark, just clear cursor circle
-        if (annotCanvasRef.current) redrawAnnotations(annotCanvasRef.current, page)
+        if (annotCanvasRef.current) redrawAnnotations(annotCanvasRef.current, page, scale * dprRef.current, dprRef.current)
       }
       return
     }
@@ -749,7 +761,7 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
                   // Also clear cursor when not drawing (hover leave)
                   if (!isDrawing.current && annotCanvasRef.current) {
                     const page = annotations.get(currentPage) ?? { strokes: [], texts: [] }
-                    redrawAnnotations(annotCanvasRef.current, page)
+                    redrawAnnotations(annotCanvasRef.current, page, scale * dprRef.current, dprRef.current)
                   }
                 }}
               />
