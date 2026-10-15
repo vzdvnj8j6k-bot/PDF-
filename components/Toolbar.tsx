@@ -38,8 +38,8 @@ export default function Toolbar({
         {TOOLS.map(t => (
           <button
             key={t.id}
-            title={t.label}
-            onClick={() => onToolChange(t.id)}
+            title={tool === t.id ? `${t.label}（クリックで解除）` : t.label}
+            onClick={() => onToolChange(tool === t.id ? 'none' : t.id)}
             className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold transition-all mx-auto
               ${tool === t.id
                 ? 'bg-blue-600 text-white shadow-md scale-105'

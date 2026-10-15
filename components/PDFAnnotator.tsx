@@ -23,7 +23,7 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(0)
   const [scale, setScale] = useState(1.4)
-  const [tool, setTool] = useState<Tool>('pen')
+  const [tool, setTool] = useState<Tool>('none')
   const [color, setColor] = useState('#000000')
   const [brushSize, setBrushSize] = useState(3)
   const [annotations, setAnnotations] = useState<Map<number, PageAnnotations>>(
@@ -175,7 +175,7 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
 
   // Drawing handlers
   function handlePointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
-    if (readonly) return
+    if (readonly || tool === 'none') return
     e.currentTarget.setPointerCapture(e.pointerId)
 
     const point = getPoint(e)
@@ -389,14 +389,16 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
     setStatus('idle')
   }
 
-  const canvasStyle = {
-    cursor: tool === 'pen' || tool === 'highlighter'
-      ? 'crosshair'
-      : tool === 'eraser'
-      ? 'cell'
-      : 'text',
-    touchAction: 'none',
-  }
+  const canvasStyle = tool === 'none'
+    ? { cursor: 'grab', touchAction: 'auto', pointerEvents: 'none' as const }
+    : {
+        cursor: tool === 'pen' || tool === 'highlighter'
+          ? 'crosshair'
+          : tool === 'eraser'
+          ? 'cell'
+          : 'text',
+        touchAction: 'none' as const,
+      }
 
   return (
     <div className="flex h-full">
