@@ -1,36 +1,91 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 📝 PDF Note - PDFに書き込み・共有・印刷
 
-## Getting Started
+PDFファイルに自由に書き込みができて、リンクで共有・印刷もできるWebアプリです。
 
-First, run the development server:
+## 機能
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- ✏️ **ペン・マーカー・テキスト・消しゴム**ツールで書き込み
+- 💾 **自動保存** (書き込み後1.5秒で自動保存)
+- 🔗 **共有リンク生成** (読み取り専用リンクを作成)
+- 🖨️ **印刷** (書き込みを含めてそのまま印刷)
+- ↩️ **元に戻す** (Ctrl+Z または ボタン)
+- 📱 **マルチページ対応**
+
+## セットアップ手順
+
+### 1. Supabase プロジェクトを作成
+
+1. [https://supabase.com](https://supabase.com) にアクセスしてアカウント作成
+2. 「New project」をクリックして新しいプロジェクトを作成
+3. プロジェクト名と強力なパスワードを設定
+
+### 2. データベースを設定
+
+1. Supabase ダッシュボード → **SQL Editor** を開く
+2. このリポジトリの `supabase-schema.sql` の内容をすべてコピーして実行
+
+### 3. Anonymous Auth を有効化
+
+1. Supabase ダッシュボード → **Authentication** → **Providers**
+2. **Anonymous Sign-Ins** を「Enabled」に切り替え
+
+### 4. 環境変数を設定
+
+1. Supabase ダッシュボード → **Settings** → **API** を開く
+2. 以下の2つの値をコピー:
+   - **Project URL**
+   - **anon public** キー
+
+3. `.env.local.example` を `.env.local` にコピーして値を設定:
+```
+NEXT_PUBLIC_SUPABASE_URL=あなたのProject URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY=あなたのanon publicキー
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 5. ローカルで動かす
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+→ http://localhost:3000 で開く
 
-## Learn More
+## Vercel へのデプロイ
 
-To learn more about Next.js, take a look at the following resources:
+### 1. GitHub にプッシュ
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+git init
+git add .
+git commit -m "Initial commit"
+git remote add origin https://github.com/あなたのユーザー名/pdf-annotator.git
+git push -u origin main
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 2. Vercel でデプロイ
 
-## Deploy on Vercel
+1. [https://vercel.com](https://vercel.com) にアクセス（GitHubアカウントでログイン）
+2. 「Add New Project」→ GitHubリポジトリを選択
+3. **Environment Variables** に以下を追加:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+4. 「Deploy」ボタンをクリック
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 無料枠について
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| サービス | 無料枠 |
+|---------|--------|
+| Vercel | 無制限の個人プロジェクト |
+| Supabase | 500MB ストレージ、1GB DB、50MBファイル上限/個 |
+| GitHub | 無制限のパブリック/プライベートリポジトリ |
+
+大学の授業資料程度なら無料枠で十分使えます。
+
+## 技術スタック
+
+- **Next.js 14** (App Router)
+- **TypeScript**
+- **Tailwind CSS**
+- **PDF.js** (PDFレンダリング)
+- **Supabase** (認証・DB・ファイルストレージ)
