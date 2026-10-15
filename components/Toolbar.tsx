@@ -15,7 +15,6 @@ interface ToolbarProps {
   onUndo: () => void
   onClearPage: () => void
   canUndo: boolean
-  onShare?: () => void
 }
 
 function Tooltip({ label }: { label: string }) {
@@ -53,7 +52,7 @@ const FONT_SIZES = [12, 16, 24, 36]
 export default function Toolbar({
   tool, color, size, fontSize,
   onToolChange, onColorChange, onSizeChange, onFontSizeChange,
-  onUndo, onClearPage, canUndo, onShare,
+  onUndo, onClearPage, canUndo,
 }: ToolbarProps) {
   const [hoveredTool, setHoveredTool] = useState<string | null>(null)
 
@@ -165,24 +164,6 @@ export default function Toolbar({
         {hoveredTool === 'clear' && <Tooltip label="このページをクリア" />}
       </div>
 
-      {/* Share */}
-      {onShare && (
-        <>
-          <div className="w-8 h-px bg-gray-200" />
-          <div className="relative">
-            <button
-              onClick={onShare}
-              onMouseEnter={() => setHoveredTool('share')}
-              onMouseLeave={() => setHoveredTool(null)}
-              className="w-10 h-10 rounded-lg flex items-center justify-center text-sm
-                bg-green-50 text-green-700 hover:bg-green-100 transition-colors"
-            >
-              🔗
-            </button>
-            {hoveredTool === 'share' && <Tooltip label="共有リンク" />}
-          </div>
-        </>
-      )}
     </div>
   )
 }

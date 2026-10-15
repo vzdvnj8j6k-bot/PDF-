@@ -686,7 +686,6 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
           onUndo={handleUndo}
           onClearPage={handleClearPage}
           canUndo={(history.current.get(currentPage)?.length ?? 0) > 0}
-          onShare={onShare}
         />
       )}
 
