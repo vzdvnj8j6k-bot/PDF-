@@ -302,7 +302,29 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
-    if (!isDrawing.current || !currentStroke.current || !annotCanvasRef.current) return
+    if (!annotCanvasRef.current) return
+
+    // Show eraser cursor on hover even without pressing
+    if (!isDrawing.current) {
+      if (tool === 'eraser') {
+        const point = getPoint(e)
+        const pageAnnotations = annotations.get(currentPage) ?? { strokes: [], texts: [] }
+        redrawAnnotations(annotCanvasRef.current, pageAnnotations)
+        const ctx = annotCanvasRef.current.getContext('2d')!
+        const eraserSize = brushSize * 4
+        ctx.save()
+        ctx.strokeStyle = 'rgba(150,150,150,0.6)'
+        ctx.lineWidth = 1.5
+        ctx.setLineDash([4, 3])
+        ctx.beginPath()
+        ctx.arc(point.x * scale, point.y * scale, eraserSize, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.restore()
+      }
+      return
+    }
+
+    if (!currentStroke.current) return
 
     const point = getPoint(e)
     currentStroke.current.points.push(point)
@@ -360,10 +382,10 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
 
     if (tool === 'eraser') {
       // Commit eraser path as pixel-level erasure mark
+      const page = annotations.get(currentPage) ?? { strokes: [], texts: [] }
       if (stroke.points.length > 0) {
         const r = stroke.size / scale  // normalize radius to page units
         const mark: EraserMark = { id: uuidv4(), points: stroke.points, r }
-        const page = annotations.get(currentPage) ?? { strokes: [], texts: [] }
         const updated: PageAnnotations = {
           ...page,
           eraserMarks: [...(page.eraserMarks ?? []), mark],
@@ -374,6 +396,11 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
           return next
         })
         scheduleSave(currentPage, updated)
+        // Immediately redraw with new mark to clear cursor circle
+        if (annotCanvasRef.current) redrawAnnotations(annotCanvasRef.current, updated)
+      } else {
+        // No mark, just clear cursor circle
+        if (annotCanvasRef.current) redrawAnnotations(annotCanvasRef.current, page)
       }
       return
     }
@@ -715,7 +742,14 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
-                onPointerLeave={handlePointerUp}
+                onPointerLeave={() => {
+                  handlePointerUp()
+                  // Also clear cursor when not drawing (hover leave)
+                  if (!isDrawing.current && annotCanvasRef.current) {
+                    const page = annotations.get(currentPage) ?? { strokes: [], texts: [] }
+                    redrawAnnotations(annotCanvasRef.current, page)
+                  }
+                }}
               />
               {/* Text input */}
               {textInput && (
