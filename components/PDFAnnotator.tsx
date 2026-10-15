@@ -179,7 +179,8 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
     ctx.save()
     ctx.globalAlpha = stroke.opacity
     ctx.strokeStyle = stroke.color
-    ctx.lineWidth = stroke.size * drawScale
+    // size is in screen pixels — do NOT multiply by drawScale so thickness stays consistent across zoom
+    ctx.lineWidth = stroke.size
     ctx.lineCap = stroke.tool === 'highlighter' ? 'square' : 'round'
     ctx.lineJoin = stroke.tool === 'highlighter' ? 'miter' : 'round'
 
@@ -268,8 +269,8 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
     redrawAnnotations(annotCanvasRef.current, pageAnnotations)
 
     if (tool === 'eraser') {
-      // Show eraser cursor circle instead of pixel erasure
-      const r = currentStroke.current.size * scale
+      // Show eraser cursor circle — size is in screen pixels, coords need ×scale
+      const r = currentStroke.current.size
       ctx.save()
       ctx.strokeStyle = 'rgba(150,150,150,0.6)'
       ctx.lineWidth = 1.5
@@ -298,7 +299,8 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
 
     if (tool === 'eraser') {
       // Semantic erase: remove strokes whose points fall within eraser radius
-      const r = stroke.size
+      // size is in screen pixels; coords are normalized (÷scale), so convert r too
+      const r = stroke.size / scale
       setAnnotations(prev => {
         const page = prev.get(currentPage) ?? { strokes: [], texts: [] }
         const remaining = page.strokes.filter(s =>
