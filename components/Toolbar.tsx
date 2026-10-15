@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { Tool } from '@/types'
 
 interface ToolbarProps {
@@ -12,6 +13,17 @@ interface ToolbarProps {
   onUndo: () => void
   onClearPage: () => void
   canUndo: boolean
+}
+
+function Tooltip({ label }: { label: string }) {
+  return (
+    <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 z-50 pointer-events-none">
+      <div className="bg-gray-800 text-white text-xs rounded px-2 py-1 whitespace-nowrap shadow-lg">
+        {label}
+        <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-gray-800" />
+      </div>
+    </div>
+  )
 }
 
 const COLORS = [
@@ -31,23 +43,30 @@ export default function Toolbar({
   onToolChange, onColorChange, onSizeChange,
   onUndo, onClearPage, canUndo,
 }: ToolbarProps) {
+  const [hoveredTool, setHoveredTool] = useState<string | null>(null)
+
   return (
     <div className="flex flex-col gap-3 p-3 bg-white border-r border-gray-200 shadow-sm w-16 items-center">
       {/* Tools */}
       <div className="flex flex-col gap-1 w-full">
         {TOOLS.map(t => (
-          <button
-            key={t.id}
-            title={tool === t.id ? `${t.label}（クリックで解除）` : t.label}
-            onClick={() => onToolChange(tool === t.id ? 'none' : t.id)}
-            className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold transition-all mx-auto
-              ${tool === t.id
-                ? 'bg-blue-600 text-white shadow-md scale-105'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-          >
-            {t.icon}
-          </button>
+          <div key={t.id} className="relative mx-auto">
+            <button
+              onClick={() => onToolChange(tool === t.id ? 'none' : t.id)}
+              onMouseEnter={() => setHoveredTool(t.id)}
+              onMouseLeave={() => setHoveredTool(null)}
+              className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold transition-all
+                ${tool === t.id
+                  ? 'bg-blue-600 text-white shadow-md scale-105'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+            >
+              {t.icon}
+            </button>
+            {hoveredTool === t.id && (
+              <Tooltip label={tool === t.id ? `${t.label}（解除）` : t.label} />
+            )}
+          </div>
         ))}
       </div>
 
@@ -86,23 +105,31 @@ export default function Toolbar({
       <div className="w-8 h-px bg-gray-200" />
 
       {/* Actions */}
-      <button
-        title="元に戻す (Ctrl+Z)"
-        onClick={onUndo}
-        disabled={!canUndo}
-        className="w-10 h-10 rounded-lg flex items-center justify-center text-lg disabled:opacity-30
-          bg-gray-100 hover:bg-gray-200 disabled:cursor-not-allowed transition-colors"
-      >
-        ↩
-      </button>
-      <button
-        title="このページをクリア"
-        onClick={onClearPage}
-        className="w-10 h-10 rounded-lg flex items-center justify-center text-sm
-          bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
-      >
-        🗑
-      </button>
+      <div className="relative">
+        <button
+          onClick={onUndo}
+          disabled={!canUndo}
+          onMouseEnter={() => setHoveredTool('undo')}
+          onMouseLeave={() => setHoveredTool(null)}
+          className="w-10 h-10 rounded-lg flex items-center justify-center text-lg disabled:opacity-30
+            bg-gray-100 hover:bg-gray-200 disabled:cursor-not-allowed transition-colors"
+        >
+          ↩
+        </button>
+        {hoveredTool === 'undo' && <Tooltip label="元に戻す (Ctrl+Z)" />}
+      </div>
+      <div className="relative">
+        <button
+          onClick={onClearPage}
+          onMouseEnter={() => setHoveredTool('clear')}
+          onMouseLeave={() => setHoveredTool(null)}
+          className="w-10 h-10 rounded-lg flex items-center justify-center text-sm
+            bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+        >
+          🗑
+        </button>
+        {hoveredTool === 'clear' && <Tooltip label="このページをクリア" />}
+      </div>
     </div>
   )
 }
