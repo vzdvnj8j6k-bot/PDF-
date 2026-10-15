@@ -411,6 +411,19 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
     setStatus('idle')
   }
 
+  // Ctrl+wheel zoom (desktop)
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    function onWheel(e: WheelEvent) {
+      if (!e.ctrlKey) return
+      e.preventDefault()
+      setScale(s => Math.min(3, Math.max(0.5, Math.round((s - e.deltaY * 0.001) * 10) / 10)))
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
+
   function handleTouchStart(e: React.TouchEvent) {
     if (e.touches.length === 2) {
       const dx = e.touches[0].clientX - e.touches[1].clientX
