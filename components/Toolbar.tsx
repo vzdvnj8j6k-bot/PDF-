@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { Tool } from '@/types'
 
 interface ToolbarProps {
@@ -33,10 +33,16 @@ const COLORS = [
   '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899',
 ]
 
-const TOOLS: { id: Tool; label: string; icon: string }[] = [
+const LineSvg = () => (
+  <svg viewBox="0 0 20 20" width="18" height="18" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+    <line x1="3" y1="17" x2="17" y2="3" />
+  </svg>
+)
+
+const TOOLS: { id: Tool; label: string; icon: React.ReactNode }[] = [
   { id: 'pen', label: 'ペン', icon: '✏️' },
   { id: 'highlighter', label: 'マーカー', icon: '🖊️' },
-  { id: 'line', label: '直線', icon: '╱' },
+  { id: 'line', label: '直線', icon: <LineSvg /> },
   { id: 'text', label: 'テキスト', icon: 'T' },
   { id: 'eraser', label: '消しゴム', icon: '◻' },
 ]
