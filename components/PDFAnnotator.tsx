@@ -62,6 +62,7 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
   const renderTaskRef = useRef<import('pdfjs-dist').RenderTask | null>(null)
   const pinchStartDist = useRef<number | null>(null)
   const pinchStartScale = useRef<number>(1)
+  const scaleRef = useRef(scale)
   const clientId = useRef(uuidv4())
   const channelRef = useRef<RealtimeChannel | null>(null)
 
@@ -597,45 +598,63 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
     setStatus('idle')
   }
 
-  // Ctrl+wheel zoom (desktop)
+  // Keep scaleRef in sync for native event handlers
+  useEffect(() => { scaleRef.current = scale }, [scale])
+
+  // Ctrl+wheel zoom (desktop) + pinch zoom (mobile) via native listeners
+  // Using native listeners (not React) so e.preventDefault() actually works on iOS
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
+
     function onWheel(e: WheelEvent) {
       if (!e.ctrlKey) return
       e.preventDefault()
       setScale(s => Math.min(3, Math.max(0.5, Math.round((s - e.deltaY * 0.001) * 10) / 10)))
     }
+
+    function onTouchStart(e: TouchEvent) {
+      if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX
+        const dy = e.touches[0].clientY - e.touches[1].clientY
+        pinchStartDist.current = Math.hypot(dx, dy)
+        pinchStartScale.current = scaleRef.current
+      }
+    }
+
+    function onTouchMove(e: TouchEvent) {
+      if (e.touches.length === 2 && pinchStartDist.current !== null) {
+        e.preventDefault()
+        const dx = e.touches[0].clientX - e.touches[1].clientX
+        const dy = e.touches[0].clientY - e.touches[1].clientY
+        const dist = Math.hypot(dx, dy)
+        const ratio = dist / pinchStartDist.current
+        // Deadzone: ignore tiny jitter (< 4% change) to reduce over-sensitivity
+        if (Math.abs(ratio - 1) < 0.04) return
+        const next = Math.min(3, Math.max(0.5, pinchStartScale.current * ratio))
+        // Finer 0.05 steps instead of 0.1 for smoother zoom
+        setScale(Math.round(next * 20) / 20)
+      }
+    }
+
+    function onTouchEnd(e: TouchEvent) {
+      if (e.touches.length < 2) {
+        pinchStartDist.current = null
+      }
+    }
+
     el.addEventListener('wheel', onWheel, { passive: false })
-    return () => el.removeEventListener('wheel', onWheel)
+    el.addEventListener('touchstart', onTouchStart, { passive: true })
+    el.addEventListener('touchmove', onTouchMove, { passive: false })
+    el.addEventListener('touchend', onTouchEnd, { passive: true })
+
+    return () => {
+      el.removeEventListener('wheel', onWheel)
+      el.removeEventListener('touchstart', onTouchStart)
+      el.removeEventListener('touchmove', onTouchMove)
+      el.removeEventListener('touchend', onTouchEnd)
+    }
   }, [])
-
-  function handleTouchStart(e: React.TouchEvent) {
-    if (e.touches.length === 2) {
-      const dx = e.touches[0].clientX - e.touches[1].clientX
-      const dy = e.touches[0].clientY - e.touches[1].clientY
-      pinchStartDist.current = Math.hypot(dx, dy)
-      pinchStartScale.current = scale
-    }
-  }
-
-  function handleTouchMove(e: React.TouchEvent) {
-    if (e.touches.length === 2 && pinchStartDist.current !== null) {
-      e.preventDefault()
-      const dx = e.touches[0].clientX - e.touches[1].clientX
-      const dy = e.touches[0].clientY - e.touches[1].clientY
-      const dist = Math.hypot(dx, dy)
-      const ratio = dist / pinchStartDist.current
-      const next = Math.min(3, Math.max(0.5, pinchStartScale.current * ratio))
-      setScale(Math.round(next * 10) / 10)
-    }
-  }
-
-  function handleTouchEnd(e: React.TouchEvent) {
-    if (e.touches.length < 2) {
-      pinchStartDist.current = null
-    }
-  }
 
   const canvasStyle = tool === 'none'
     ? { cursor: 'grab', touchAction: 'auto', pointerEvents: 'none' as const }
@@ -649,7 +668,7 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
       }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full w-full overflow-hidden">
       {/* Toolbar (edit mode only) */}
       {!readonly && (
         <Toolbar
@@ -734,10 +753,7 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
         {/* PDF Canvas area */}
         <div
           ref={containerRef}
-          className="flex-1 overflow-auto"
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
+          className="flex-1 overflow-auto pdf-scroll-area"
         >
           <div className="flex justify-center min-w-max py-6 px-8">
           {isLoading ? (

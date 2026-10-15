@@ -22,3 +22,19 @@ html, body {
     visibility: hidden;
   }
 }
+
+/* PDF scroll area — visible scrollbars on all platforms */
+.pdf-scroll-area::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.pdf-scroll-area::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.28);
+  border-radius: 4px;
+}
+.pdf-scroll-area::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.45);
+}
+.pdf-scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+}

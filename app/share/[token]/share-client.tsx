@@ -246,35 +246,55 @@ function ShareReader({
     }
   }
 
-  // Ctrl+wheel zoom
+  // Keep scaleRef in sync for native event handlers
+  const scaleRef = useRef(scale)
+  useEffect(() => { scaleRef.current = scale }, [scale])
+
+  // Ctrl+wheel zoom + pinch zoom via native listeners (so preventDefault works on iOS)
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
+
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey) return
       e.preventDefault()
       setScale(s => Math.min(3, Math.max(0.5, Math.round((s - e.deltaY * 0.001) * 10) / 10)))
     }
-    el.addEventListener('wheel', onWheel, { passive: false })
-    return () => el.removeEventListener('wheel', onWheel)
-  }, [])
 
-  function handleTouchStart(e: React.TouchEvent) {
-    if (e.touches.length === 2) {
-      pinchStartDist.current = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY)
-      pinchStartScale.current = scale
+    function onTouchStart(e: TouchEvent) {
+      if (e.touches.length === 2) {
+        pinchStartDist.current = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY)
+        pinchStartScale.current = scaleRef.current
+      }
     }
-  }
-  function handleTouchMove(e: React.TouchEvent) {
-    if (e.touches.length === 2 && pinchStartDist.current !== null) {
-      e.preventDefault()
-      const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY)
-      setScale(Math.round(Math.min(3, Math.max(0.5, pinchStartScale.current * dist / pinchStartDist.current)) * 10) / 10)
+
+    function onTouchMove(e: TouchEvent) {
+      if (e.touches.length === 2 && pinchStartDist.current !== null) {
+        e.preventDefault()
+        const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY)
+        const ratio = dist / pinchStartDist.current
+        if (Math.abs(ratio - 1) < 0.04) return
+        const next = Math.min(3, Math.max(0.5, pinchStartScale.current * ratio))
+        setScale(Math.round(next * 20) / 20)
+      }
     }
-  }
-  function handleTouchEnd(e: React.TouchEvent) {
-    if (e.touches.length < 2) pinchStartDist.current = null
-  }
+
+    function onTouchEnd(e: TouchEvent) {
+      if (e.touches.length < 2) pinchStartDist.current = null
+    }
+
+    el.addEventListener('wheel', onWheel, { passive: false })
+    el.addEventListener('touchstart', onTouchStart, { passive: true })
+    el.addEventListener('touchmove', onTouchMove, { passive: false })
+    el.addEventListener('touchend', onTouchEnd, { passive: true })
+
+    return () => {
+      el.removeEventListener('wheel', onWheel)
+      el.removeEventListener('touchstart', onTouchStart)
+      el.removeEventListener('touchmove', onTouchMove)
+      el.removeEventListener('touchend', onTouchEnd)
+    }
+  }, [])
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
@@ -320,8 +340,7 @@ function ShareReader({
       </div>
 
       {/* PDF area */}
-      <div ref={containerRef} className="flex-1 overflow-auto bg-gray-100"
-        onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
+      <div ref={containerRef} className="flex-1 overflow-auto bg-gray-100 pdf-scroll-area">
         <div className="flex justify-center min-w-max py-6 px-8">
           <div className="relative shadow-xl" style={{ display: 'inline-block' }}>
             <canvas ref={pdfCanvasRef} className="block" />
