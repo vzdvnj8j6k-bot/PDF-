@@ -52,6 +52,7 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
   const pinchStartScale = useRef<number>(1)
   const clientId = useRef(uuidv4())
   const channelRef = useRef<RealtimeChannel | null>(null)
+  const erasedInGesture = useRef<Set<string>>(new Set())
 
   // Load PDF.js and PDF
   useEffect(() => {
@@ -256,6 +257,13 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
       opacity: tool === 'highlighter' ? 0.4 : 1,
       points: [point],
     }
+    if (tool === 'eraser') {
+      // Save undo history at start of erase gesture (before any erasure)
+      const page = annotations.get(currentPage) ?? { strokes: [], texts: [] }
+      const hist = history.current.get(currentPage) ?? []
+      history.current.set(currentPage, [...hist, page])
+      erasedInGesture.current = new Set()
+    }
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
@@ -266,20 +274,33 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
 
     const ctx = annotCanvasRef.current.getContext('2d')!
     const pageAnnotations = annotations.get(currentPage) ?? { strokes: [], texts: [] }
-    redrawAnnotations(annotCanvasRef.current, pageAnnotations)
 
     if (tool === 'eraser') {
-      // Show eraser cursor circle — size is in screen pixels, coords need ×scale
-      const r = currentStroke.current.size
+      // Real-time erasure: mark overlapping strokes as erased immediately
+      const r = currentStroke.current.size / scale
+      for (const s of pageAnnotations.strokes) {
+        if (!erasedInGesture.current.has(s.id) &&
+            s.points.some(sp => Math.hypot(sp.x - point.x, sp.y - point.y) < r)) {
+          erasedInGesture.current.add(s.id)
+        }
+      }
+      // Redraw excluding erased strokes (visual update without state change)
+      const filtered: typeof pageAnnotations = {
+        ...pageAnnotations,
+        strokes: pageAnnotations.strokes.filter(s => !erasedInGesture.current.has(s.id)),
+      }
+      redrawAnnotations(annotCanvasRef.current, filtered)
+      // Draw eraser cursor
       ctx.save()
       ctx.strokeStyle = 'rgba(150,150,150,0.6)'
       ctx.lineWidth = 1.5
       ctx.setLineDash([4, 3])
       ctx.beginPath()
-      ctx.arc(point.x * scale, point.y * scale, r, 0, Math.PI * 2)
+      ctx.arc(point.x * scale, point.y * scale, currentStroke.current.size, 0, Math.PI * 2)
       ctx.stroke()
       ctx.restore()
     } else {
+      redrawAnnotations(annotCanvasRef.current, pageAnnotations)
       drawStroke(ctx, currentStroke.current)
     }
   }
@@ -298,25 +319,19 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
     }
 
     if (tool === 'eraser') {
-      // Semantic erase: remove strokes whose points fall within eraser radius
-      // size is in screen pixels; coords are normalized (÷scale), so convert r too
-      const r = stroke.size / scale
-      setAnnotations(prev => {
-        const page = prev.get(currentPage) ?? { strokes: [], texts: [] }
-        const remaining = page.strokes.filter(s =>
-          !s.points.some(sp =>
-            stroke.points.some(ep => Math.hypot(sp.x - ep.x, sp.y - ep.y) < r)
-          )
-        )
-        if (remaining.length === page.strokes.length) return prev
-        const hist = history.current.get(currentPage) ?? []
-        history.current.set(currentPage, [...hist, page])
-        const updated = { ...page, strokes: remaining }
-        const next = new Map(prev)
-        next.set(currentPage, updated)
+      // Commit the visually-erased strokes to state
+      const erasedIds = new Set(erasedInGesture.current)
+      erasedInGesture.current = new Set()
+      if (erasedIds.size > 0) {
+        const page = annotations.get(currentPage) ?? { strokes: [], texts: [] }
+        const updated = { ...page, strokes: page.strokes.filter(s => !erasedIds.has(s.id)) }
+        setAnnotations(prev => {
+          const next = new Map(prev)
+          next.set(currentPage, updated)
+          return next
+        })
         scheduleSave(currentPage, updated)
-        return next
-      })
+      }
       return
     }
 
