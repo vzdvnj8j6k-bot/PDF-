@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { deleteDocument, getDocuments, getSession, signInWithGoogle, signOut, uploadDocument } from '@/lib/db'
+import { deleteDocument, getDocuments, getLastSession, getSession, signInWithGoogle, signOut, uploadDocument } from '@/lib/db'
 import { Document } from '@/types'
 import type { Session } from '@supabase/supabase-js'
 
@@ -14,10 +14,15 @@ export default function HomePage() {
   const [isDragging, setIsDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isSigningIn, setIsSigningIn] = useState(false)
+  const [lastSession, setLastSession] = useState<{ documentId: string; title: string; pageNumber: number; savedAt: string } | null>(null)
+  const [resumeDismissed, setResumeDismissed] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    getSession().then(s => setSession(s))
+    getSession().then(s => {
+      setSession(s)
+      if (s) getLastSession().then(ls => setLastSession(ls))
+    })
   }, [])
 
   const loadDocuments = useCallback(async () => {
@@ -156,6 +161,31 @@ export default function HomePage() {
             </button>
           </div>
         </div>
+
+        {/* Resume last session */}
+        {lastSession && !resumeDismissed && (
+          <div className="mb-6 flex items-center gap-4 bg-blue-600 text-white rounded-2xl px-5 py-4 shadow-md">
+            <div className="text-2xl">📖</div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-blue-200 mb-0.5">前回の続き</p>
+              <p className="font-semibold truncate">{lastSession.title}</p>
+              <p className="text-xs text-blue-200">{lastSession.pageNumber}ページ目 · {new Date(lastSession.savedAt).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+            </div>
+            <button
+              onClick={() => router.push(`/editor/${lastSession.documentId}?page=${lastSession.pageNumber}`)}
+              className="px-4 py-2 bg-white text-blue-600 rounded-xl font-bold text-sm hover:bg-blue-50 transition-colors whitespace-nowrap flex-shrink-0"
+            >
+              続きから開く
+            </button>
+            <button
+              onClick={() => setResumeDismissed(true)}
+              className="text-blue-300 hover:text-white transition-colors text-lg flex-shrink-0"
+              aria-label="閉じる"
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         {/* Upload area */}
         <div

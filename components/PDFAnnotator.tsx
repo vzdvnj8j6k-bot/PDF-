@@ -16,13 +16,22 @@ interface Props {
   documentId: string
   readonly?: boolean
   initialAnnotations?: Map<number, PageAnnotations>
+  initialPage?: number
+  onPageChange?: (page: number) => void
 }
 
 const SAVE_DEBOUNCE_MS = 1500
 
-export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, initialAnnotations }: Props) {
+export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, initialAnnotations, initialPage = 1, onPageChange }: Props) {
   const [pdf, setPdf] = useState<import('pdfjs-dist').PDFDocumentProxy | null>(null)
-  const [currentPage, setCurrentPage] = useState(1)
+  const [currentPage, _setCurrentPage] = useState(initialPage)
+  function setCurrentPage(p: number | ((prev: number) => number)) {
+    _setCurrentPage(prev => {
+      const next = typeof p === 'function' ? p(prev) : p
+      onPageChange?.(next)
+      return next
+    })
+  }
   const [totalPages, setTotalPages] = useState(0)
   const [scale, setScale] = useState(1.4)
   const [tool, setTool] = useState<Tool>('none')

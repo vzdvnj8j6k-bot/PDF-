@@ -1,16 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useEffect, useRef, useState } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import PDFAnnotator from '@/components/PDFAnnotator'
-import { createShareLink, getDocument, getPdfUrl } from '@/lib/db'
+import { createShareLink, getDocument, getPdfUrl, saveLastSession } from '@/lib/db'
 import { Document } from '@/types'
 
 export default function EditorPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const id = params.id as string
+  const initialPage = Number(searchParams.get('page') ?? '1') || 1
 
   const [document, setDocument] = useState<Document | null>(null)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
@@ -20,6 +22,8 @@ export default function EditorPage() {
   const [showShareDialog, setShowShareDialog] = useState(false)
   const [shareError, setShareError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [currentPage, setCurrentPage] = useState(initialPage)
+  const saveTimer = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -35,6 +39,16 @@ export default function EditorPage() {
     }
     load()
   }, [id, router])
+
+  // Debounced save of last session whenever page changes
+  useEffect(() => {
+    if (!document) return
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      saveLastSession(document.id, document.title, currentPage).catch(() => {})
+    }, 1500)
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current) }
+  }, [document, currentPage])
 
   async function handleShare() {
     if (!document) return
@@ -97,6 +111,8 @@ export default function EditorPage() {
         <PDFAnnotator
           pdfUrl={pdfUrl}
           documentId={document.id}
+          initialPage={initialPage}
+          onPageChange={setCurrentPage}
         />
       </div>
 

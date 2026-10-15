@@ -37,6 +37,26 @@ export async function signOut() {
   if (error) throw error
 }
 
+export async function saveLastSession(documentId: string, title: string, pageNumber: number) {
+  const sb = getSupabaseClient()
+  await sb.auth.updateUser({
+    data: {
+      last_session: {
+        documentId,
+        title,
+        pageNumber,
+        savedAt: new Date().toISOString(),
+      },
+    },
+  })
+}
+
+export async function getLastSession(): Promise<{ documentId: string; title: string; pageNumber: number; savedAt: string } | null> {
+  const sb = getSupabaseClient()
+  const { data: { user } } = await sb.auth.getUser()
+  return user?.user_metadata?.last_session ?? null
+}
+
 // ==================== Documents ====================
 
 export async function uploadDocument(file: File, title: string): Promise<Document> {
