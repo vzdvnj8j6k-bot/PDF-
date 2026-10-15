@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid'
 import { getSupabaseClient } from './supabase'
 import { Document, PageAnnotations, ShareLink, Stroke, TextAnnotation } from '@/types'
 
@@ -158,9 +159,10 @@ export async function createShareLink(documentId: string): Promise<ShareLink> {
 
   if (existing) return existing as ShareLink
 
+  const token = uuidv4()
   const { data, error } = await sb
     .from('share_links')
-    .insert({ document_id: documentId })
+    .insert({ document_id: documentId, token })
     .select()
     .single()
 
