@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import Toolbar from './Toolbar'
-import { PageAnnotations, Point, Stroke, TextAnnotation, Tool } from '@/types'
+import { EraserMark, PageAnnotations, Point, Stroke, TextAnnotation, Tool } from '@/types'
 import { getAllAnnotations, saveAnnotations, updateDocumentPages } from '@/lib/db'
 import { getSupabaseClient } from '@/lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
@@ -62,7 +62,6 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
   const pinchStartScale = useRef<number>(1)
   const clientId = useRef(uuidv4())
   const channelRef = useRef<RealtimeChannel | null>(null)
-  const erasedInGesture = useRef<Set<string>>(new Set())
 
   // Load PDF.js and PDF
   useEffect(() => {
@@ -183,6 +182,30 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
       ctx.fillText(text.text, text.x * drawScale, text.y * drawScale)
       ctx.restore()
     }
+
+    // Apply eraser marks (pixel-level erasure via destination-out)
+    if (pageAnnotations.eraserMarks?.length) {
+      ctx.save()
+      ctx.globalCompositeOperation = 'destination-out'
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+      for (const mark of pageAnnotations.eraserMarks) {
+        if (mark.points.length === 0) continue
+        ctx.lineWidth = mark.r * 2 * drawScale
+        ctx.beginPath()
+        if (mark.points.length === 1) {
+          ctx.arc(mark.points[0].x * drawScale, mark.points[0].y * drawScale, mark.r * drawScale, 0, Math.PI * 2)
+          ctx.fill()
+        } else {
+          ctx.moveTo(mark.points[0].x * drawScale, mark.points[0].y * drawScale)
+          for (let i = 1; i < mark.points.length; i++) {
+            ctx.lineTo(mark.points[i].x * drawScale, mark.points[i].y * drawScale)
+          }
+          ctx.stroke()
+        }
+      }
+      ctx.restore()
+    }
   }
 
   function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, drawScale = scale, forceStudyMode = studyMode) {
@@ -275,7 +298,6 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
       const page = annotations.get(currentPage) ?? { strokes: [], texts: [] }
       const hist = history.current.get(currentPage) ?? []
       history.current.set(currentPage, [...hist, page])
-      erasedInGesture.current = new Set()
     }
   }
 
@@ -289,20 +311,31 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
     const pageAnnotations = annotations.get(currentPage) ?? { strokes: [], texts: [] }
 
     if (tool === 'eraser') {
-      // Real-time erasure: mark overlapping strokes as erased immediately
-      const r = currentStroke.current.size / scale
-      for (const s of pageAnnotations.strokes) {
-        if (!erasedInGesture.current.has(s.id) &&
-            s.points.some(sp => Math.hypot(sp.x - point.x, sp.y - point.y) < r)) {
-          erasedInGesture.current.add(s.id)
+      // Redraw base annotations (including saved eraser marks)
+      redrawAnnotations(annotCanvasRef.current, pageAnnotations)
+
+      // Apply current gesture path as pixel-level erasure
+      const pts = currentStroke.current.points
+      if (pts.length > 0) {
+        ctx.save()
+        ctx.globalCompositeOperation = 'destination-out'
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        ctx.lineWidth = currentStroke.current.size * 2
+        ctx.beginPath()
+        if (pts.length === 1) {
+          ctx.arc(pts[0].x * scale, pts[0].y * scale, currentStroke.current.size, 0, Math.PI * 2)
+          ctx.fill()
+        } else {
+          ctx.moveTo(pts[0].x * scale, pts[0].y * scale)
+          for (let i = 1; i < pts.length; i++) {
+            ctx.lineTo(pts[i].x * scale, pts[i].y * scale)
+          }
+          ctx.stroke()
         }
+        ctx.restore()
       }
-      // Redraw excluding erased strokes (visual update without state change)
-      const filtered: typeof pageAnnotations = {
-        ...pageAnnotations,
-        strokes: pageAnnotations.strokes.filter(s => !erasedInGesture.current.has(s.id)),
-      }
-      redrawAnnotations(annotCanvasRef.current, filtered)
+
       // Draw eraser cursor
       ctx.save()
       ctx.strokeStyle = 'rgba(150,150,150,0.6)'
@@ -325,19 +358,16 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
     const stroke = currentStroke.current
     currentStroke.current = null
 
-    if (stroke.points.length < 2) return
-
-    if (tool === 'line') {
-      stroke.points = [stroke.points[0], stroke.points[stroke.points.length - 1]]
-    }
-
     if (tool === 'eraser') {
-      // Commit the visually-erased strokes to state
-      const erasedIds = new Set(erasedInGesture.current)
-      erasedInGesture.current = new Set()
-      if (erasedIds.size > 0) {
+      // Commit eraser path as pixel-level erasure mark
+      if (stroke.points.length > 0) {
+        const r = stroke.size / scale  // normalize radius to page units
+        const mark: EraserMark = { id: uuidv4(), points: stroke.points, r }
         const page = annotations.get(currentPage) ?? { strokes: [], texts: [] }
-        const updated = { ...page, strokes: page.strokes.filter(s => !erasedIds.has(s.id)) }
+        const updated: PageAnnotations = {
+          ...page,
+          eraserMarks: [...(page.eraserMarks ?? []), mark],
+        }
         setAnnotations(prev => {
           const next = new Map(prev)
           next.set(currentPage, updated)
@@ -346,6 +376,12 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
         scheduleSave(currentPage, updated)
       }
       return
+    }
+
+    if (stroke.points.length < 2) return
+
+    if (tool === 'line') {
+      stroke.points = [stroke.points[0], stroke.points[stroke.points.length - 1]]
     }
 
     setAnnotations(prev => {

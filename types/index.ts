@@ -23,9 +23,16 @@ export interface TextAnnotation {
   color: string
 }
 
+export interface EraserMark {
+  id: string
+  points: Point[]
+  r: number  // radius in page units (scale-independent)
+}
+
 export interface PageAnnotations {
   strokes: Stroke[]
   texts: TextAnnotation[]
+  eraserMarks?: EraserMark[]
 }
 
 export interface Document {
