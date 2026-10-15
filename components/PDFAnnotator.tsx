@@ -155,61 +155,62 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
     renderPage(currentPage)
   }, [currentPage, renderPage])
 
-  // Redraw all annotations for a page
-  function redrawAnnotations(canvas: HTMLCanvasElement, pageAnnotations: PageAnnotations) {
+  // Redraw all annotations for a page at the given drawScale
+  function redrawAnnotations(canvas: HTMLCanvasElement, pageAnnotations: PageAnnotations, drawScale = scale) {
     const ctx = canvas.getContext('2d')!
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
     for (const stroke of pageAnnotations.strokes) {
       if (stroke.points.length < 2) continue
-      drawStroke(ctx, stroke)
+      drawStroke(ctx, stroke, drawScale)
     }
 
     for (const text of pageAnnotations.texts) {
       ctx.save()
-      ctx.font = `${text.fontSize}px sans-serif`
+      ctx.font = `${text.fontSize * drawScale}px sans-serif`
       ctx.fillStyle = text.color
-      ctx.fillText(text.text, text.x, text.y)
+      ctx.fillText(text.text, text.x * drawScale, text.y * drawScale)
       ctx.restore()
     }
   }
 
-  function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke) {
+  function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, drawScale = scale) {
     if (stroke.points.length < 2) return
     ctx.save()
     ctx.globalAlpha = stroke.opacity
     ctx.strokeStyle = stroke.color
-    ctx.lineWidth = stroke.size
+    ctx.lineWidth = stroke.size * drawScale
     ctx.lineCap = stroke.tool === 'highlighter' ? 'square' : 'round'
     ctx.lineJoin = stroke.tool === 'highlighter' ? 'miter' : 'round'
 
     if (stroke.tool === 'highlighter') {
       ctx.globalCompositeOperation = 'multiply'
-    } else if (stroke.tool === 'eraser') {
-      ctx.globalCompositeOperation = 'destination-out'
-      ctx.globalAlpha = 1
     }
 
+    const pts = stroke.points
     ctx.beginPath()
-    ctx.moveTo(stroke.points[0].x, stroke.points[0].y)
-    for (let i = 1; i < stroke.points.length; i++) {
-      const prev = stroke.points[i - 1]
-      const curr = stroke.points[i]
-      ctx.quadraticCurveTo(prev.x, prev.y, (prev.x + curr.x) / 2, (prev.y + curr.y) / 2)
+    ctx.moveTo(pts[0].x * drawScale, pts[0].y * drawScale)
+    for (let i = 1; i < pts.length; i++) {
+      const prev = pts[i - 1]
+      const curr = pts[i]
+      ctx.quadraticCurveTo(
+        prev.x * drawScale, prev.y * drawScale,
+        (prev.x + curr.x) / 2 * drawScale, (prev.y + curr.y) / 2 * drawScale
+      )
     }
-    ctx.lineTo(stroke.points[stroke.points.length - 1].x, stroke.points[stroke.points.length - 1].y)
+    ctx.lineTo(pts[pts.length - 1].x * drawScale, pts[pts.length - 1].y * drawScale)
     ctx.stroke()
     ctx.restore()
   }
 
-  // Get canvas-relative coordinates
+  // Get canvas-relative coordinates normalized to scale=1 (PDF page units)
   function getPoint(e: React.PointerEvent<HTMLCanvasElement>): Point {
     const rect = annotCanvasRef.current!.getBoundingClientRect()
     const scaleX = annotCanvasRef.current!.width / rect.width
     const scaleY = annotCanvasRef.current!.height / rect.height
     return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY,
+      x: (e.clientX - rect.left) * scaleX / scale,
+      y: (e.clientY - rect.top) * scaleY / scale,
     }
   }
 
@@ -268,13 +269,13 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
 
     if (tool === 'eraser') {
       // Show eraser cursor circle instead of pixel erasure
-      const r = currentStroke.current.size
+      const r = currentStroke.current.size * scale
       ctx.save()
       ctx.strokeStyle = 'rgba(150,150,150,0.6)'
       ctx.lineWidth = 1.5
       ctx.setLineDash([4, 3])
       ctx.beginPath()
-      ctx.arc(point.x, point.y, r, 0, Math.PI * 2)
+      ctx.arc(point.x * scale, point.y * scale, r, 0, Math.PI * 2)
       ctx.stroke()
       ctx.restore()
     } else {
@@ -463,26 +464,12 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
       pdfC.height = viewport.height
       await page.render({ canvas: pdfC, viewport }).promise
 
-      // Draw annotations on top
+      // Draw annotations on top at print scale=2
       const annotC = document.createElement('canvas')
       annotC.width = viewport.width
       annotC.height = viewport.height
       const pageAnnotations = annotations.get(p) ?? { strokes: [], texts: [] }
-
-      // Scale strokes for print (scale 2 vs current scale)
-      const ratio = 2 / scale
-      const ctx = annotC.getContext('2d')!
-      ctx.scale(ratio, ratio)
-
-      const scaledAnnotations: PageAnnotations = {
-        strokes: pageAnnotations.strokes,
-        texts: pageAnnotations.texts,
-      }
-      const tempCanvas = document.createElement('canvas')
-      tempCanvas.width = viewport.width / ratio
-      tempCanvas.height = viewport.height / ratio
-      redrawAnnotations(tempCanvas, scaledAnnotations)
-      ctx.drawImage(tempCanvas, 0, 0)
+      redrawAnnotations(annotC, pageAnnotations, 2)
 
       // Merge PDF + annotations
       const merged = document.createElement('canvas')
@@ -666,10 +653,10 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
                   onBlur={handleTextSubmit}
                   className="absolute bg-transparent border-b border-blue-400 outline-none"
                   style={{
-                    left: textInput.x * (annotCanvasRef.current ? annotCanvasRef.current.getBoundingClientRect().width / annotCanvasRef.current.width : 1),
-                    top: textInput.y * (annotCanvasRef.current ? annotCanvasRef.current.getBoundingClientRect().height / annotCanvasRef.current.height : 1),
+                    left: textInput.x * scale * (annotCanvasRef.current ? annotCanvasRef.current.getBoundingClientRect().width / annotCanvasRef.current.width : 1),
+                    top: textInput.y * scale * (annotCanvasRef.current ? annotCanvasRef.current.getBoundingClientRect().height / annotCanvasRef.current.height : 1),
                     color,
-                    fontSize,
+                    fontSize: fontSize * scale,
                     minWidth: 100,
                   }}
                   placeholder="テキストを入力..."
