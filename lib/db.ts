@@ -1,18 +1,20 @@
-import { supabase } from './supabase'
+import { getSupabaseClient } from './supabase'
 import { Document, PageAnnotations, ShareLink, Stroke, TextAnnotation } from '@/types'
 
 // ==================== Auth ====================
 
 export async function ensureAnonymousAuth() {
-  const { data: { session } } = await supabase.auth.getSession()
+  const sb = getSupabaseClient()
+  const { data: { session } } = await sb.auth.getSession()
   if (!session) {
-    const { error } = await supabase.auth.signInAnonymously()
+    const { error } = await sb.auth.signInAnonymously()
     if (error) throw error
   }
 }
 
 export async function getCurrentUserId(): Promise<string | null> {
-  const { data: { user } } = await supabase.auth.getUser()
+  const sb = getSupabaseClient()
+  const { data: { user } } = await sb.auth.getUser()
   return user?.id ?? null
 }
 
@@ -22,24 +24,18 @@ export async function uploadDocument(file: File, title: string): Promise<Documen
   await ensureAnonymousAuth()
   const userId = await getCurrentUserId()
   if (!userId) throw new Error('Not authenticated')
+  const sb = getSupabaseClient()
 
-  // Upload PDF to Supabase Storage
   const fileName = `${userId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
-  const { error: uploadError } = await supabase.storage
+  const { error: uploadError } = await sb.storage
     .from('pdfs')
     .upload(fileName, file, { contentType: 'application/pdf' })
 
   if (uploadError) throw uploadError
 
-  // Create document record
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .from('documents')
-    .insert({
-      user_id: userId,
-      title,
-      pdf_path: fileName,
-      total_pages: 1,
-    })
+    .insert({ user_id: userId, title, pdf_path: fileName, total_pages: 1 })
     .select()
     .single()
 
@@ -51,8 +47,9 @@ export async function getDocuments(): Promise<Document[]> {
   await ensureAnonymousAuth()
   const userId = await getCurrentUserId()
   if (!userId) return []
+  const sb = getSupabaseClient()
 
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .from('documents')
     .select('*')
     .eq('user_id', userId)
@@ -64,7 +61,8 @@ export async function getDocuments(): Promise<Document[]> {
 
 export async function getDocument(id: string): Promise<Document | null> {
   await ensureAnonymousAuth()
-  const { data, error } = await supabase
+  const sb = getSupabaseClient()
+  const { data, error } = await sb
     .from('documents')
     .select('*')
     .eq('id', id)
@@ -75,37 +73,30 @@ export async function getDocument(id: string): Promise<Document | null> {
 }
 
 export async function updateDocumentPages(id: string, totalPages: number) {
-  await supabase
-    .from('documents')
-    .update({ total_pages: totalPages })
-    .eq('id', id)
+  const sb = getSupabaseClient()
+  await sb.from('documents').update({ total_pages: totalPages }).eq('id', id)
 }
 
 export async function deleteDocument(id: string) {
   const doc = await getDocument(id)
   if (!doc) return
-
-  // Delete PDF from storage
-  await supabase.storage.from('pdfs').remove([doc.pdf_path])
-
-  // Delete document record (cascades to annotations and share_links)
-  const { error } = await supabase
-    .from('documents')
-    .delete()
-    .eq('id', id)
-
+  const sb = getSupabaseClient()
+  await sb.storage.from('pdfs').remove([doc.pdf_path])
+  const { error } = await sb.from('documents').delete().eq('id', id)
   if (error) throw error
 }
 
 export function getPdfUrl(pdfPath: string): string {
-  const { data } = supabase.storage.from('pdfs').getPublicUrl(pdfPath)
+  const sb = getSupabaseClient()
+  const { data } = sb.storage.from('pdfs').getPublicUrl(pdfPath)
   return data.publicUrl
 }
 
 // ==================== Annotations ====================
 
 export async function getAnnotations(documentId: string, pageNumber: number): Promise<PageAnnotations> {
-  const { data, error } = await supabase
+  const sb = getSupabaseClient()
+  const { data, error } = await sb
     .from('annotations')
     .select('strokes')
     .eq('document_id', documentId)
@@ -113,12 +104,8 @@ export async function getAnnotations(documentId: string, pageNumber: number): Pr
     .single()
 
   if (error || !data) return { strokes: [], texts: [] }
-
   const stored = data.strokes as { strokes?: Stroke[], texts?: TextAnnotation[] }
-  return {
-    strokes: stored.strokes ?? [],
-    texts: stored.texts ?? [],
-  }
+  return { strokes: stored.strokes ?? [], texts: stored.texts ?? [] }
 }
 
 export async function saveAnnotations(
@@ -126,7 +113,8 @@ export async function saveAnnotations(
   pageNumber: number,
   annotations: PageAnnotations
 ) {
-  const { error } = await supabase
+  const sb = getSupabaseClient()
+  const { error } = await sb
     .from('annotations')
     .upsert(
       {
@@ -137,25 +125,21 @@ export async function saveAnnotations(
       },
       { onConflict: 'document_id,page_number' }
     )
-
   if (error) throw error
 }
 
 export async function getAllAnnotations(documentId: string): Promise<Map<number, PageAnnotations>> {
-  const { data, error } = await supabase
+  const sb = getSupabaseClient()
+  const { data, error } = await sb
     .from('annotations')
     .select('page_number, strokes')
     .eq('document_id', documentId)
 
   if (error || !data) return new Map()
-
   const map = new Map<number, PageAnnotations>()
   for (const row of data) {
     const stored = row.strokes as { strokes?: Stroke[], texts?: TextAnnotation[] }
-    map.set(row.page_number, {
-      strokes: stored.strokes ?? [],
-      texts: stored.texts ?? [],
-    })
+    map.set(row.page_number, { strokes: stored.strokes ?? [], texts: stored.texts ?? [] })
   }
   return map
 }
@@ -164,9 +148,9 @@ export async function getAllAnnotations(documentId: string): Promise<Map<number,
 
 export async function createShareLink(documentId: string): Promise<ShareLink> {
   await ensureAnonymousAuth()
+  const sb = getSupabaseClient()
 
-  // Check if share link already exists
-  const { data: existing } = await supabase
+  const { data: existing } = await sb
     .from('share_links')
     .select('*')
     .eq('document_id', documentId)
@@ -174,8 +158,7 @@ export async function createShareLink(documentId: string): Promise<ShareLink> {
 
   if (existing) return existing as ShareLink
 
-  // Create new share link
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .from('share_links')
     .insert({ document_id: documentId })
     .select()
@@ -186,8 +169,8 @@ export async function createShareLink(documentId: string): Promise<ShareLink> {
 }
 
 export async function getDocumentByToken(token: string): Promise<{ document: Document; annotations: Map<number, PageAnnotations> } | null> {
-  // Get share link
-  const { data: shareLink, error: slError } = await supabase
+  const sb = getSupabaseClient()
+  const { data: shareLink, error: slError } = await sb
     .from('share_links')
     .select('document_id')
     .eq('token', token)
@@ -195,8 +178,7 @@ export async function getDocumentByToken(token: string): Promise<{ document: Doc
 
   if (slError || !shareLink) return null
 
-  // Get document
-  const { data: doc, error: docError } = await supabase
+  const { data: doc, error: docError } = await sb
     .from('documents')
     .select('*')
     .eq('id', shareLink.document_id)
@@ -205,6 +187,5 @@ export async function getDocumentByToken(token: string): Promise<{ document: Doc
   if (docError || !doc) return null
 
   const annotations = await getAllAnnotations(doc.id)
-
   return { document: doc as Document, annotations }
 }
