@@ -37,11 +37,14 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null)
   const annotCanvasRef = useRef<HTMLCanvasElement>(null)
   const textInputRef = useRef<HTMLInputElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const isDrawing = useRef(false)
   const currentStroke = useRef<Stroke | null>(null)
   const history = useRef<Map<number, PageAnnotations[]>>(new Map())
   const saveTimer = useRef<NodeJS.Timeout | null>(null)
   const renderTaskRef = useRef<import('pdfjs-dist').RenderTask | null>(null)
+  const pinchStartDist = useRef<number | null>(null)
+  const pinchStartScale = useRef<number>(1)
 
   // Load PDF.js and PDF
   useEffect(() => {
@@ -408,6 +411,33 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
     setStatus('idle')
   }
 
+  function handleTouchStart(e: React.TouchEvent) {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX
+      const dy = e.touches[0].clientY - e.touches[1].clientY
+      pinchStartDist.current = Math.hypot(dx, dy)
+      pinchStartScale.current = scale
+    }
+  }
+
+  function handleTouchMove(e: React.TouchEvent) {
+    if (e.touches.length === 2 && pinchStartDist.current !== null) {
+      e.preventDefault()
+      const dx = e.touches[0].clientX - e.touches[1].clientX
+      const dy = e.touches[0].clientY - e.touches[1].clientY
+      const dist = Math.hypot(dx, dy)
+      const ratio = dist / pinchStartDist.current
+      const next = Math.min(3, Math.max(0.5, pinchStartScale.current * ratio))
+      setScale(Math.round(next * 10) / 10)
+    }
+  }
+
+  function handleTouchEnd(e: React.TouchEvent) {
+    if (e.touches.length < 2) {
+      pinchStartDist.current = null
+    }
+  }
+
   const canvasStyle = tool === 'none'
     ? { cursor: 'grab', touchAction: 'auto', pointerEvents: 'none' as const }
     : {
@@ -483,7 +513,13 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
         </div>
 
         {/* PDF Canvas area */}
-        <div className="flex-1 overflow-auto">
+        <div
+          ref={containerRef}
+          className="flex-1 overflow-auto"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
           <div className="flex justify-center min-w-max py-6 px-8">
           {isLoading ? (
             <div className="flex items-center justify-center h-64">

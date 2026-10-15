@@ -18,6 +18,8 @@ export default function EditorPage() {
   const [shareUrl, setShareUrl] = useState<string | null>(null)
   const [isSharing, setIsSharing] = useState(false)
   const [showShareDialog, setShowShareDialog] = useState(false)
+  const [shareError, setShareError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -37,14 +39,17 @@ export default function EditorPage() {
   async function handleShare() {
     if (!document) return
     setIsSharing(true)
+    setShareError(null)
     try {
       const link = await createShareLink(document.id)
       const url = `${window.location.origin}/share/${link.token}`
       setShareUrl(url)
       setShowShareDialog(true)
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
       console.error('Share error:', e)
-      alert('共有リンクの作成に失敗しました')
+      setShareError(msg)
+      setShowShareDialog(true)
     } finally {
       setIsSharing(false)
     }
@@ -53,7 +58,8 @@ export default function EditorPage() {
   async function copyToClipboard() {
     if (!shareUrl) return
     await navigator.clipboard.writeText(shareUrl)
-    alert('リンクをコピーしました！')
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   if (isLoading) {
@@ -94,30 +100,51 @@ export default function EditorPage() {
         />
       </div>
 
-      {/* Share dialog */}
-      {showShareDialog && shareUrl && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full">
-            <h2 className="text-xl font-bold text-gray-800 mb-2">共有リンクが作成されました</h2>
-            <p className="text-gray-500 text-sm mb-4">
-              このリンクを知っている人は誰でも閲覧できます（書き込みはできません）
-            </p>
-            <div className="flex gap-2 mb-4">
-              <input
-                value={shareUrl}
-                readOnly
-                className="flex-1 px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg text-gray-700 font-mono"
-              />
-              <button
-                onClick={copyToClipboard}
-                className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-medium whitespace-nowrap"
-              >
-                コピー
-              </button>
-            </div>
+      {/* Share sheet */}
+      {showShareDialog && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
+          onClick={() => { setShowShareDialog(false); setShareError(null) }}
+        >
+          <div
+            className="bg-white rounded-t-2xl shadow-2xl w-full max-w-lg p-6 pb-8 animate-slide-up"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Handle bar */}
+            <div className="w-10 h-1 bg-gray-300 rounded-full mx-auto mb-5" />
+
+            {shareError ? (
+              <>
+                <h2 className="text-lg font-bold text-red-600 mb-2">共有リンクの作成に失敗しました</h2>
+                <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3 font-mono break-all mb-4">{shareError}</p>
+                <p className="text-sm text-gray-500 mb-4">Supabaseの設定を確認してください。</p>
+              </>
+            ) : (
+              <>
+                <h2 className="text-lg font-bold text-gray-800 mb-1">共有リンク</h2>
+                <p className="text-sm text-gray-500 mb-4">
+                  このリンクを知っている人は閲覧できます（書き込みはできません）
+                </p>
+                <div className="flex gap-2 mb-3">
+                  <input
+                    value={shareUrl ?? ''}
+                    readOnly
+                    className="flex-1 px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg text-gray-600 font-mono min-w-0"
+                  />
+                  <button
+                    onClick={copyToClipboard}
+                    className={`px-4 py-2 text-sm rounded-lg font-medium whitespace-nowrap transition-colors
+                      ${copied ? 'bg-green-500 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                  >
+                    {copied ? '✓ コピー済み' : 'コピー'}
+                  </button>
+                </div>
+              </>
+            )}
+
             <button
-              onClick={() => setShowShareDialog(false)}
-              className="w-full py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+              onClick={() => { setShowShareDialog(false); setShareError(null) }}
+              className="w-full py-2.5 text-sm text-gray-500 hover:text-gray-700 transition-colors rounded-lg hover:bg-gray-50"
             >
               閉じる
             </button>
