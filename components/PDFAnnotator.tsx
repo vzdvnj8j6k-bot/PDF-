@@ -40,6 +40,7 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
   const [annotations, setAnnotations] = useState<Map<number, PageAnnotations>>(
     initialAnnotations ?? new Map()
   )
+  const [studyMode, setStudyMode] = useState(false)
   const [fontSize, setFontSize] = useState(16)
   const [textInput, setTextInput] = useState<{ x: number; y: number } | null>(null)
   const [textValue, setTextValue] = useState('')
@@ -159,7 +160,7 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
         console.error('Render error:', e)
       }
     }
-  }, [pdf, scale, annotations])
+  }, [pdf, scale, annotations, studyMode])
 
   useEffect(() => {
     renderPage(currentPage)
@@ -184,17 +185,20 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
     }
   }
 
-  function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, drawScale = scale) {
+  function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, drawScale = scale, forceStudyMode = studyMode) {
     if (stroke.points.length < 2) return
     ctx.save()
-    ctx.globalAlpha = stroke.opacity
-    ctx.strokeStyle = stroke.color
-    // size is in screen pixels — do NOT multiply by drawScale so thickness stays consistent across zoom
-    ctx.lineWidth = stroke.size
-    ctx.lineCap = stroke.tool === 'highlighter' ? 'square' : 'round'
-    ctx.lineJoin = stroke.tool === 'highlighter' ? 'miter' : 'round'
 
-    if (stroke.tool === 'highlighter') {
+    const isHighlighter = stroke.tool === 'highlighter'
+    const maskMode = isHighlighter && forceStudyMode
+
+    ctx.globalAlpha = maskMode ? 1 : stroke.opacity
+    ctx.strokeStyle = maskMode ? stroke.color.slice(0, 7) : stroke.color
+    ctx.lineWidth = stroke.size
+    ctx.lineCap = isHighlighter ? 'square' : 'round'
+    ctx.lineJoin = isHighlighter ? 'miter' : 'round'
+
+    if (isHighlighter && !maskMode) {
       ctx.globalCompositeOperation = 'multiply'
     }
 
@@ -619,7 +623,7 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
             <button onClick={() => setScale(s => Math.min(3, s + 0.2))} className="px-2 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200">＋</button>
           </div>
 
-          {/* Status + Print */}
+          {/* Status + Study mode + Print */}
           <div className="flex items-center gap-3">
             {!readonly && onlineCount > 1 && (
               <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
@@ -630,6 +634,17 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
             {status === 'saving' && <span className="text-xs text-gray-400">保存中...</span>}
             {status === 'saved' && <span className="text-xs text-green-500">保存済み ✓</span>}
             {status === 'error' && <span className="text-xs text-red-500">保存失敗</span>}
+            <button
+              onClick={() => setStudyMode(m => !m)}
+              className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors
+                ${studyMode
+                  ? 'bg-red-500 text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              title="暗記シート：マーカー部分を隠して暗記テスト"
+            >
+              {studyMode ? '🟥 暗記中' : '📕 暗記'}
+            </button>
             <button
               onClick={handlePrint}
               className="px-3 py-1.5 text-sm bg-gray-800 text-white rounded-md hover:bg-gray-700 transition-colors"
