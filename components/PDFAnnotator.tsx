@@ -5,6 +5,8 @@ import { v4 as uuidv4 } from 'uuid'
 import Toolbar from './Toolbar'
 import { PageAnnotations, Point, Stroke, TextAnnotation, Tool } from '@/types'
 import { getAllAnnotations, saveAnnotations, updateDocumentPages } from '@/lib/db'
+import { getSupabaseClient } from '@/lib/supabase'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 
 // PDF.js is loaded dynamically to avoid SSR issues
 let pdfjsLib: typeof import('pdfjs-dist') | null = null
@@ -34,6 +36,7 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
   const [textValue, setTextValue] = useState('')
   const [editingTextId, setEditingTextId] = useState<string | null>(null)
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [onlineCount, setOnlineCount] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
 
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -47,6 +50,8 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
   const renderTaskRef = useRef<import('pdfjs-dist').RenderTask | null>(null)
   const pinchStartDist = useRef<number | null>(null)
   const pinchStartScale = useRef<number>(1)
+  const clientId = useRef(uuidv4())
+  const channelRef = useRef<RealtimeChannel | null>(null)
 
   // Load PDF.js and PDF
   useEffect(() => {
@@ -78,6 +83,36 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
       getAllAnnotations(documentId).then(a => setAnnotations(a))
     }
   }, [documentId, initialAnnotations, readonly])
+
+  // Realtime collaboration channel
+  useEffect(() => {
+    if (readonly) return
+    const sb = getSupabaseClient()
+    const channel = sb.channel(`doc-${documentId}`, { config: { presence: { key: clientId.current } } })
+      .on('broadcast', { event: 'annotation-update' }, ({ payload }) => {
+        if (payload.clientId === clientId.current) return
+        const { pageNumber, data } = payload as { pageNumber: number; data: PageAnnotations; clientId: string }
+        setAnnotations(prev => {
+          const next = new Map(prev)
+          next.set(pageNumber, data)
+          return next
+        })
+      })
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState()
+        setOnlineCount(Object.keys(state).length)
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({ online_at: new Date().toISOString() })
+        }
+      })
+    channelRef.current = channel
+    return () => {
+      channel.unsubscribe()
+      channelRef.current = null
+    }
+  }, [documentId, readonly])
 
   // Render PDF page + annotations
   const renderPage = useCallback(async (pageNum: number) => {
@@ -353,6 +388,12 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
         await saveAnnotations(documentId, pageNum, data)
         setStatus('saved')
         setTimeout(() => setStatus('idle'), 2000)
+        // Broadcast change to collaborators
+        channelRef.current?.send({
+          type: 'broadcast',
+          event: 'annotation-update',
+          payload: { pageNumber: pageNum, data, clientId: clientId.current },
+        })
       } catch {
         setStatus('error')
       }
@@ -567,6 +608,12 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
 
           {/* Status + Print */}
           <div className="flex items-center gap-3">
+            {!readonly && onlineCount > 1 && (
+              <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
+                <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+                {onlineCount}人が編集中
+              </span>
+            )}
             {status === 'saving' && <span className="text-xs text-gray-400">保存中...</span>}
             {status === 'saved' && <span className="text-xs text-green-500">保存済み ✓</span>}
             {status === 'error' && <span className="text-xs text-red-500">保存失敗</span>}
