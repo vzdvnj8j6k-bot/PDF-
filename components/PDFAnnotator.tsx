@@ -140,8 +140,8 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
     ctx.globalAlpha = stroke.opacity
     ctx.strokeStyle = stroke.color
     ctx.lineWidth = stroke.size
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
+    ctx.lineCap = stroke.tool === 'highlighter' ? 'square' : 'round'
+    ctx.lineJoin = stroke.tool === 'highlighter' ? 'miter' : 'round'
 
     if (stroke.tool === 'highlighter') {
       ctx.globalCompositeOperation = 'multiply'
