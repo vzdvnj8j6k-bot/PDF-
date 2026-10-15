@@ -1,4 +1,4 @@
-export type Tool = 'pen' | 'highlighter' | 'eraser' | 'text' | 'none'
+export type Tool = 'pen' | 'highlighter' | 'eraser' | 'text' | 'line' | 'none'
 
 export interface Point {
   x: number

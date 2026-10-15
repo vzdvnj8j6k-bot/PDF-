@@ -34,6 +34,7 @@ const COLORS = [
 const TOOLS: { id: Tool; label: string; icon: string }[] = [
   { id: 'pen', label: 'ペン', icon: '✏️' },
   { id: 'highlighter', label: 'マーカー', icon: '🖊️' },
+  { id: 'line', label: '直線', icon: '╱' },
   { id: 'text', label: 'テキスト', icon: 'T' },
   { id: 'eraser', label: '消しゴム', icon: '◻' },
 ]
