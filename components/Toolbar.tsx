@@ -69,6 +69,20 @@ export default function Toolbar({
             )}
           </div>
         ))}
+        {/* Undo — directly below eraser */}
+        <div className="relative mx-auto">
+          <button
+            onClick={onUndo}
+            disabled={!canUndo}
+            onMouseEnter={() => setHoveredTool('undo')}
+            onMouseLeave={() => setHoveredTool(null)}
+            className="w-10 h-10 rounded-lg flex items-center justify-center text-lg disabled:opacity-30
+              bg-gray-100 hover:bg-gray-200 disabled:cursor-not-allowed transition-colors"
+          >
+            ↩
+          </button>
+          {hoveredTool === 'undo' && <Tooltip label="元に戻す (Ctrl+Z)" />}
+        </div>
       </div>
 
       <div className="w-8 h-px bg-gray-200" />
@@ -105,20 +119,7 @@ export default function Toolbar({
 
       <div className="w-8 h-px bg-gray-200" />
 
-      {/* Actions */}
-      <div className="relative">
-        <button
-          onClick={onUndo}
-          disabled={!canUndo}
-          onMouseEnter={() => setHoveredTool('undo')}
-          onMouseLeave={() => setHoveredTool(null)}
-          className="w-10 h-10 rounded-lg flex items-center justify-center text-lg disabled:opacity-30
-            bg-gray-100 hover:bg-gray-200 disabled:cursor-not-allowed transition-colors"
-        >
-          ↩
-        </button>
-        {hoveredTool === 'undo' && <Tooltip label="元に戻す (Ctrl+Z)" />}
-      </div>
+      {/* Clear */}
       <div className="relative">
         <button
           onClick={onClearPage}
