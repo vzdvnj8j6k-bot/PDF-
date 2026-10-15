@@ -113,6 +113,7 @@ export default function EditorPage() {
           documentId={document.id}
           initialPage={initialPage}
           onPageChange={setCurrentPage}
+          onShare={handleShare}
         />
       </div>
 

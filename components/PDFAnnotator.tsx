@@ -18,11 +18,12 @@ interface Props {
   initialAnnotations?: Map<number, PageAnnotations>
   initialPage?: number
   onPageChange?: (page: number) => void
+  onShare?: () => void
 }
 
 const SAVE_DEBOUNCE_MS = 1500
 
-export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, initialAnnotations, initialPage = 1, onPageChange }: Props) {
+export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, initialAnnotations, initialPage = 1, onPageChange, onShare }: Props) {
   const [pdf, setPdf] = useState<import('pdfjs-dist').PDFDocumentProxy | null>(null)
   const [currentPage, _setCurrentPage] = useState(initialPage)
   function setCurrentPage(p: number | ((prev: number) => number)) {
@@ -651,6 +652,7 @@ export default function PDFAnnotator({ pdfUrl, documentId, readonly = false, ini
           onUndo={handleUndo}
           onClearPage={handleClearPage}
           canUndo={(history.current.get(currentPage)?.length ?? 0) > 0}
+          onShare={onShare}
         />
       )}
 
